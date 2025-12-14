@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Clock, MapPin, Users, Plus, X, Check, Search, RefreshCw, LogIn } from 'lucide-react';
+import { Calendar, Clock, MapPin, Users, X, Check, Search, RefreshCw } from 'lucide-react';
+
+const API_URL = process.env.REACT_APP_API_URL;
 
 const SpaceBookingSystem = () => {
   const [selectedSpace, setSelectedSpace] = useState(null);
@@ -15,7 +17,6 @@ const SpaceBookingSystem = () => {
   });
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [authenticated, setAuthenticated] = useState(false);
   const [filterType, setFilterType] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -45,50 +46,20 @@ const SpaceBookingSystem = () => {
   const loadBookings = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`/api/calendar?date=${selectedDate}`);
-      if (response.ok) {
-        const events = await response.json();
-        
-        const formattedBookings = events.map(event => {
-          const startTime = new Date(event.start.dateTime);
-          const endTime = new Date(event.end.dateTime);
-          const duration = (endTime - startTime) / (1000 * 60 * 60);
-          
-          return {
-            id: event.id,
-            space: event.location || event.summary.split(' - ')[0],
-            date: selectedDate,
-            time: startTime.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
-            duration: Math.round(duration),
-            teacher: event.description?.match(/Professor: (.*)/)?.[1] || 'Desconhecido',
-            turma: event.description?.match(/Turma: (.*)/)?.[1] || '',
-            materia: event.description?.match(/Matéria: (.*)/)?.[1] || '',
-            observacoes: event.description?.match(/Observações: (.*)/)?.[1] || ''
-          };
-        });
-        
-        setBookings(formattedBookings);
-      }
+      const response = await fetch(`${API_URL}?action=getBookings&date=${selectedDate}`);
+      const data = await response.json();
+      setBookings(data);
     } catch (error) {
       console.error('Erro ao carregar reservas:', error);
+      alert('Erro ao carregar reservas. Verifique a conexão.');
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    if (authenticated) {
-      loadBookings();
-    }
-  }, [selectedDate, authenticated]);
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('authenticated') === 'true') {
-      setAuthenticated(true);
-      window.history.replaceState({}, '', '/');
-    }
-  }, []);
+    loadBookings();
+  }, [selectedDate]);
 
   const filteredSpaces = spaces.filter(space => {
     const matchesType = filterType === 'all' || space.type === filterType;
@@ -105,10 +76,6 @@ const SpaceBookingSystem = () => {
   };
 
   const handleBooking = (space, time) => {
-    if (!authenticated) {
-      alert('Por favor, faça login com Google primeiro!');
-      return;
-    }
     setSelectedSpace(space);
     setSelectedTime(time);
     setBookingForm({ turma: '', materia: '', observacoes: '', teacher: 'Você' });
@@ -123,9 +90,8 @@ const SpaceBookingSystem = () => {
 
     setLoading(true);
     try {
-      const response = await fetch('/api/calendar', {
+      const response = await fetch(`${API_URL}?action=createBooking`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           space: selectedSpace.name,
           date: selectedDate,
@@ -135,12 +101,14 @@ const SpaceBookingSystem = () => {
         })
       });
 
-      if (response.ok) {
+      const result = await response.json();
+      
+      if (result.success) {
         alert('Reserva criada com sucesso!');
         setShowBookingModal(false);
         loadBookings();
       } else {
-        alert('Erro ao criar reserva. Tente novamente.');
+        alert('Erro ao criar reserva: ' + (result.error || 'Tente novamente'));
       }
     } catch (error) {
       console.error('Erro ao criar reserva:', error);
@@ -150,16 +118,19 @@ const SpaceBookingSystem = () => {
     }
   };
 
-  const cancelBooking = async (eventId) => {
+  const cancelBooking = async (bookingId) => {
     if (!window.confirm('Deseja realmente cancelar esta reserva?')) return;
 
     setLoading(true);
     try {
-      const response = await fetch(`/api/calendar?eventId=${eventId}`, {
-        method: 'DELETE'
+      const response = await fetch(`${API_URL}?action=deleteBooking`, {
+        method: 'POST',
+        body: JSON.stringify({ id: bookingId })
       });
 
-      if (response.ok) {
+      const result = await response.json();
+      
+      if (result.success) {
         alert('Reserva cancelada!');
         loadBookings();
       } else {
@@ -172,31 +143,6 @@ const SpaceBookingSystem = () => {
       setLoading(false);
     }
   };
-
-  const handleGoogleLogin = () => {
-    window.location.href = '/api/auth';
-  };
-
-  if (!authenticated) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50 flex items-center justify-center p-6">
-        <div className="bg-white rounded-2xl shadow-2xl p-12 max-w-md w-full text-center">
-          <div className="bg-indigo-600 p-6 rounded-full w-24 h-24 mx-auto mb-6 flex items-center justify-center">
-            <Calendar className="w-12 h-12 text-white" />
-          </div>
-          <h1 className="text-3xl font-bold text-gray-800 mb-4">Sistema de Reservas</h1>
-          <p className="text-gray-600 mb-8">Faça login com sua conta Google da escola para acessar o sistema</p>
-          <button
-            onClick={handleGoogleLogin}
-            className="bg-indigo-600 hover:bg-indigo-700 text-white px-8 py-4 rounded-xl flex items-center justify-center gap-3 w-full font-semibold text-lg transition-colors"
-          >
-            <LogIn className="w-6 h-6" />
-            Entrar com Google
-          </button>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50 p-6">
@@ -358,14 +304,12 @@ const SpaceBookingSystem = () => {
                       )}
                     </div>
                   </div>
-                  {booking.teacher === 'Você' && (
-                    <button
-                      onClick={() => cancelBooking(booking.id)}
-                      className="bg-red-500 hover:bg-red-600 text-white p-2 rounded-lg transition-colors"
-                    >
-                      <X className="w-5 h-5" />
-                    </button>
-                  )}
+                  <button
+                    onClick={() => cancelBooking(booking.id)}
+                    className="bg-red-500 hover:bg-red-600 text-white p-2 rounded-lg transition-colors"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
                 </div>
               ))
             )}
@@ -374,7 +318,7 @@ const SpaceBookingSystem = () => {
 
         {showBookingModal && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6">
+            <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 max-h-screen overflow-y-auto">
               <div className="flex items-center justify-between mb-6">
                 <h3 className="text-2xl font-bold text-gray-800">Confirmar Reserva</h3>
                 <button onClick={() => setShowBookingModal(false)} className="text-gray-500 hover:text-gray-700">
@@ -391,7 +335,7 @@ const SpaceBookingSystem = () => {
                 <div className="bg-purple-50 p-4 rounded-xl">
                   <p className="text-sm text-gray-600">Data e Horário</p>
                   <p className="font-bold text-gray-800">
-                    {new Date(selectedDate).toLocaleDateString('pt-BR')} às {selectedTime}
+                    {new Date(selectedDate + 'T00:00:00').toLocaleDateString('pt-BR')} às {selectedTime}
                   </p>
                 </div>
 
